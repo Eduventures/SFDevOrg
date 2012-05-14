@@ -1,0 +1,61 @@
+<apex:page controller="DevToolController" sidebar="false" showHeader="false" >
+<apex:composition template="{!$Site.Template}">
+<apex:define name="body">
+
+<script>
+function confirmation() 
+{
+    return confirm('Are you sure you want to delete this Scenario?');
+}
+</script>
+<apex:pageBlock title="Welcome {!user.Name}">
+<apex:pageMessages ></apex:pageMessages>
+Your account ({!user.Account.Name}) has {!scenarios.size} existing scenarios to view/edit. <br />
+</apex:pageBlock>
+
+<apex:form >
+    <apex:pageBlock >
+        <apex:pageBlockButtons location="top" >
+            <apex:commandButton action="{!createScenario}" value="Plan your campaign" />
+        </apex:pageBlockButtons>
+        
+        <apex:pageBlockTable var="scenario" value="{!scenarios}" >
+            <apex:column width="300px" >
+                <apex:facet name="header">Campaign Name</apex:facet> 
+                {!scenario.Campaign_Name__c}  <br />
+                <apex:commandLink action="{!editScenario}" > 
+                    <apex:param name="editid" value="{!scenario.Id}"/>
+                    <apex:param name="cid" value="{!user.Id}"/>
+                    EDIT THIS SCENARIO
+                </apex:commandLink><br />                                 
+            </apex:column>            
+            <apex:column rendered="{! $Profile.Name == 'System Administrator'}" >
+                <apex:facet name="header">Scenario Name</apex:facet>
+                <apex:outputLink value="{!scenario.Id}" >{!scenario.name}</apex:outputLink>
+            </apex:column>
+            <apex:column >
+                <apex:facet name="header"> </apex:facet>
+                <!-- <apex:commandLink action="{!cloneScenario}" >
+                    <apex:param name="cloneid" value="{!scenario.Id}" />
+                    clone
+                </apex:commandLink> &nbsp;   -->
+                <apex:commandLink action="{!deleteScenario}" onclick="if (!confirmation()) return false;" >
+                    <apex:param name="deleteid" value="{!scenario.Id}"/>
+                    delete
+                </apex:commandLink>
+            </apex:column> 
+            <apex:column value="{!scenario.CreatedDate}" />
+            <apex:column value="{!scenario.CreatedBy.Name}" />
+            <apex:column value="{!scenario.Total_Donors_Required__c}" />
+            <apex:column value="{!scenario.Total_Gifts_Equaling__c}" />
+            <apex:column value="{!scenario.Total_Number_of_Visits_Needed__c}" />
+            <apex:column value="{!scenario.Total_Prospects_Required__c}" />
+            <apex:column value="{!scenario.Category_Count__c}" />
+            
+        </apex:pageBlockTable>                    
+        
+    </apex:pageBlock>
+</apex:form>
+</apex:define>
+</apex:composition>
+</apex:page>

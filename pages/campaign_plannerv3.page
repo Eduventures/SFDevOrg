@@ -1,0 +1,748 @@
+<apex:page standardController="Scenario__c" extensions="campaignPlannerControllerv3" sidebar="false" showHeader="false">
+<apex:composition template="{!$Site.Template}">
+<apex:define name="body">
+
+<apex:includeScript id="jqbase" value="{!URLFOR($Resource.jqueryui, '/js/jquery-1.7.1.min.js')}"/>
+<apex:includeScript id="jquijs" value="{!URLFOR($Resource.jqueryui, '/js/jquery-ui-1.8.18.custom.min.js')}"/>
+<apex:stylesheet id="jquicss" value="{!URLFOR($Resource.jqueryui, '/css/smoothness/jquery-ui-1.8.18.custom.css')}"/> 
+<style>
+.currentStep { 
+		font-weight:bold;
+		color: blue;
+}
+
+.bigHeader { white-space: no-wrap !important; 
+             background-color: #C5D9F1 !important;
+             width: 75%;}
+.colHeader { white-space: pre-wrap !important; 
+             background-color: #C5D9F1 !important;
+             width: 25%;
+             text-align:right;}             
+.myInput { width:35px !important; }
+table.cattable {
+    width: 400px;
+    border-width: 1px;
+    border-spacing: 0px;
+    border-style: solid;
+    border-color: black;
+    border-collapse: collapse;
+}
+
+table.cattable td {
+    border-width: 1px;
+    padding: 5px;
+    border-style: inset;
+    border-color: black;
+}
+
+table.cattable td.blank {
+    border: none !important;
+	background-color: #FFFFFF !important;
+}
+</style>
+<script>
+    function confirmation(type) 
+    {
+        return confirm('Are you sure you want to delete this ' + type + ' ? It cant be undone.');
+    }
+        
+    function showMe(divID) 
+    {
+            $("[id='"+divID+"']").dialog('open');    
+    }
+    
+    function hideMe(divID) 
+    {
+        $("[id='"+divID+"']").dialog('close');    
+    }
+    
+    $(document).ready( function(){
+    
+        $(".popupWindow").dialog(
+        {
+            modal:true,
+            autoOpen: false,
+            closeable: true,
+            resizable: true,
+            width: 600,
+            height: 400,
+            overlay: {opacity: 0.5, background: "black" },
+            open: function(event, ui) { $(".ui-dialog-titlebar-close").remove(); }      
+        });
+        
+    });
+    
+</script>
+<apex:form > 
+     <apex:pageBlock title="Overview - Campaign Name:{!IF(theScenario.Campaign_Name__c != null, theScenario.Campaign_Name__c,'')}" id="overview">
+        <p>The goal of the Campaign Staffing Tool is to demonstrate {!theUser.Account.Name}s  visit capacity for smaller focused
+        campaigns based on current staffing levels and assumptions in regards to the number of visits required
+        for closing gifts at differing levels within the gift pyramid.</p>
+
+        <p>Steps to complete:</p>
+		<ol id="steplist"> 
+			<li>Enter a name for this Campaign</li>
+			<li>Define the tiers of your Gift Pyramid</li>
+			<li>Identify any staff positions that are expected to go on calls</li>
+			<li>Break down each Gift Tier into more discrete gift levels</li>
+			<li>Provide Staffing Assumptions (# of FTEs, visit capacity, etc)  
+				( <apex:commandLink action="{!jumpto}" value="jump here"><apex:param value="{!5}" assignTo="{!jumpto}" /> </apex:commandLink> )
+			</li>
+			<li>Review the Campaign Model capacity results</li>
+		</ol>
+	<script>
+    	$('#steplist li:nth-child(<apex:outputText value="{!stepCount}" />)').addClass('currentStep');
+	</script>
+	</apex:pageBlock>
+    <div style="text-align: center;width:100%;">&nbsp;
+    	<apex:actionStatus id="editsaveStatus" >
+	    <apex:facet name="start">
+	     <h1>(loading ...) <img src="{!$Resource.spin}"/>  </h1>
+	    </apex:facet>
+	    </apex:actionStatus>
+	    <apex:actionStatus id="cateditsaveStatus" >
+	    <apex:facet name="start">
+	     <h1>(Saving edit &amp; recalculating...) <img src="{!$Resource.spin}"/>  </h1>
+	    </apex:facet>
+	    </apex:actionStatus>
+    </div>
+    <apex:pageMessages id="msgs" ></apex:pageMessages>		
+	<apex:outputPanel id="campaignName" >
+	<apex:pageBlock title="Step 1: Name the Campaign" rendered="{!stepCount == 1}">
+        <apex:actionRegion >
+        <p> To get started, please enter a name that describes the campaign you want to model: 
+            <apex:inputField value="{!theScenario.Campaign_Name__c}" style="width:400px;"/> and 
+            then hit &nbsp;<apex:commandButton value="Continue" action="{!saveName}" status="editsaveStatus"  reRender="giftpyramid,campaignName,overview" />    
+        </p> 
+        </apex:actionRegion>
+    </apex:pageBlock>     
+	</apex:outputPanel>  
+
+    <apex:outputPanel id="giftpyramid" >
+    <apex:pageBlock title="STEP 2: Specify the tiers of your 'gift pyramid'" rendered="{! stepCount == 2}">
+		<script>
+	    	$('#steplist li').removeClass('currentStep');
+	    	$('#steplist li:nth-child(<apex:outputText value="{!stepCount}" />)').addClass('currentStep');
+		</script>
+            <p>Tiers are used to designate an upper and lower limit on the size of gifts that staff in various positions will be going after. You 
+            will have the ability to list the staff groups, and which Tier they will target, in later steps. Identify the upper and lower 
+            thresholds of the tier, leave blank if there is no limit (say, for the Upper threshold on your top tier).<br /></p>
+            <p>When you are ready, select &nbsp;<apex:commandButton value="Next" action="{!next}" reRender="positions,giftpyramid,msgs" status="editsaveStatus" />
+        	 or click <apex:commandButton value="Back" action="{!back}" reRender="giftlevels,giftpyramid"  status="editsaveStatus" /> to edit the Campaign Name</p> 
+            
+            
+            <table>
+            <tr>
+            	<td>To get started, <apex:commandButton value="click to make a new Gift Tier" action="{!newTier}" reRender="giftpyramid,msgs" status="editsaveStatus" />
+            	</td>
+            	<td style="vertical-align:top;">
+	            <apex:outputPanel id="categoriesBox" >
+	                <apex:actionRegion >
+	                <p><b>List of Gift Tiers</b></p>
+	                <table>
+                	<tr>
+                		<td><b>Min Gift Value</b></td>
+                		<td><b>Max Gift Value (leave blank if no cap)</b></td>
+                		<td><b>Actions</b></td>
+                	</tr>
+                	<apex:outputPanel layout="none" id="addTierBox" rendered="{! makingnewtier }" >
+		            <apex:actionRegion >
+	                <tr>               
+	                	<td>$<apex:inputField value="{!addCategory.Threshold_Lower__c}"/></td>
+	                	<td>$<apex:inputField value="{!addCategory.Threshold_Upper__c}"/></td>
+	                	<td>
+	                		<apex:commandButton action="{!saveCedit}" reRender="addTierBox,categoriesBox,positions" value="Save" status="editsaveStatus" />
+	                    	<apex:commandButton action="{!cancelCedit}" reRender="addTierBox,categoriesBox" value="Cancel" status="editsaveStatus" />
+	                    </td>
+	                </tr>
+		            </apex:actionRegion>    
+		            </apex:outputPanel>
+	                <apex:repeat value="{!categories}" var="category">
+	                <tr style="background-color:{!category.Color__c} !important;">
+	                	<td>
+	                		<apex:outputField value="{!category.Threshold_Lower__c}" rendered="{!editCategoryId != category.Id}"/>
+	                		<apex:inputField value="{!category.Threshold_Lower__c}" rendered="{!editCategoryId == category.Id}"/>
+                		</td>
+	                	<td>
+	                		<apex:outputField value="{!category.Threshold_Upper__c}" rendered="{!editCategoryId != category.Id}"/>
+	                		<apex:inputField value="{!category.Threshold_Upper__c}" rendered="{!editCategoryId == category.Id}"/>
+	                	</td>
+	                    <td>
+		                    <apex:commandButton value="Edit" action="{!editCategory}" rendered="{!editCategoryId == null}" reRender="categoriesBox" status="editsaveStatus" >
+		                        <apex:param name="editCategoryId"
+		                        value="{!category.Id}"
+		                        assignTo="{!editCategoryId}"/> 
+		                    </apex:commandButton>
+		                    <apex:commandButton value="Delete" action="{!deleteCategory}" rendered="{!editCategoryId == null}" reRender="categoriesBox,positions" status="editsaveStatus" >
+		                        <apex:param name="deleteCategoryId"
+		                        value="{!category.Id}"
+		                        assignTo="{!deleteCategoryId}"/>
+		                    </apex:commandButton>
+		                    <apex:commandButton action="{!saveCedit}" reRender="addTierBox,categoriesBox,positions" value="Save" rendered="{!editCategoryId != null}" status="editsaveStatus" />
+		                    <apex:commandButton action="{!cancelCedit}" reRender="addTierBox,categoriesBox" value="Cancel" rendered="{!editCategoryId != null}" status="editsaveStatus" />
+						</td>
+					</tr>
+	                </apex:repeat>
+					</table>
+	                </apex:actionRegion>       
+	            </apex:outputPanel>
+            	</td>
+            </tr>
+            </table>
+        </apex:pageBlock>
+		</apex:outputPanel>  
+		
+        <apex:outputPanel id="positions" >
+        <apex:pageBlock title="STEP 3: identify your frontline staffing groups" rendered="{!stepCount == 3}">
+		<script>
+	    	$('#steplist li').removeClass('currentStep');
+	    	$('#steplist li:nth-child(<apex:outputText value="{!stepCount}" />)').addClass('currentStep');
+		</script>
+		editPositionId = {!editPositionId}
+            <apex:outputPanel id="editBox" >
+                <p>Identify the Staff groups that will be fund raising, noting the percentage of their time that will be 
+                dedicated to fund raising. Select 'add a position' next to the gift tier that those staff will be fundraising at.</p>
+    			<p>When you are ready, select &nbsp;<apex:commandButton value="Next" action="{!next}" reRender="positions,giftlevels,msgs" status="editsaveStatus" />
+        	 	or click <apex:commandButton value="Back" action="{!back}" reRender="positions,giftpyramid" status="editsaveStatus" /> to edit your Gift Tiers</p> 
+                
+                <table style="width:100%">
+	            <tr>
+	                <td style="vertical-align:top;width:50%">
+	                <apex:outputPanel id="categoriesPOBox" >
+	                <apex:actionRegion >
+	                <p><b>List of Gift Tiers</b></p>
+	                <apex:pageBlockTable value="{!categories}" var="category">
+	                <apex:column style="white-space:nowrap;font-weight:bold;" >
+	                    <apex:facet name="header">Tier Name</apex:facet>
+	                    <apex:outputField value="{!category.Name}"/>            
+	                </apex:column>
+	                <apex:column >
+	                    <apex:facet name="header"></apex:facet>
+	                    <apex:commandButton value="Add a position at this level" action="{!addPosition}" disabled="{! levelCategoryId != null || editPositionId != null }" reRender="positions,addPO" status="editsaveStatus" >
+	                        <apex:param name="levelCategoryId"
+	                        value="{!category.Id}"
+	                        assignTo="{!levelCategoryId}"/>
+	                    </apex:commandButton> 
+	                </apex:column>
+	                <apex:column >
+	                    <apex:facet name="header">Min Gift Value</apex:facet>
+	                    <apex:outputField value="{!category.Threshold_Lower__c}"/>
+	                </apex:column> 
+	                <apex:column >
+	                    <apex:facet name="header">Max Gift Value</apex:facet>
+	                    <apex:outputField value="{!category.Threshold_Upper__c}"/>
+	                </apex:column>
+					<apex:column width="50%" >
+						<apex:facet name="header">Staff Groups Fundraising at this Tier</apex:facet>
+						<apex:outputPanel id="positionsBox" >
+							<table>
+			                <apex:outputPanel id="positionsheader" layout="none" rendered="{!levelCategoryId == category.Id || category.Staffing_Positions__r.size > 0}" >
+			                <tr>
+			                	<td style="white-space: nowrap;font-weight:bold;" >Position Name</td>
+			                	<td style="white-space: nowrap;font-weight:bold;" >Actions</td>
+			                	<td style="white-space: nowrap;font-weight:bold;" >% of time alloted to visits</td>
+			                	<td style="white-space: nowrap;font-weight:bold;" >Expected # of visits (per year)</td>
+			                	<td style="white-space: nowrap;font-weight:bold;" ># of FTEs in this position</td>
+			                	<td style="white-space: nowrap;font-weight:bold;" >Gift Tier</td>
+			                </tr>
+			                </apex:outputPanel>
+			                <apex:actionRegion >							
+			                <apex:outputPanel id="addPO" layout="none" rendered="{!levelCategoryId == category.Id && editPositionId == null }">
+			                <tr>
+			                	<td>
+								<apex:inputField value="{!addPosition.Name}"/>
+								</td>			                	
+			                	<td>
+			                		<apex:commandButton action="{!savePedit}" reRender="positions,editBox,msgs" value="Save" status="editsaveStatus" />
+				                	<apex:commandButton action="{!cancelPedit}" reRender="positions" value="Cancel" status="editsaveStatus" />
+			                	</td>            
+			                	<td><apex:inputField value="{!addPosition.Percent_of_Time__c}"/></td>	
+			                	<td><apex:inputField value="{!addPosition.Expected_Visits_per_Year__c}"/></td>
+			                	<td><apex:inputField value="{!addPosition.Number_of_FTE__c}"/></td>
+			                	<td> </td>
+			                </tr>
+				            </apex:outputPanel>
+				            </apex:actionRegion>
+			                <apex:repeat value="{!category.Staffing_Positions__r}" var="position">		                
+			                <tr>
+			                	<td>
+			                		<apex:outputField value="{!position.Name}" rendered="{! editPositionId != position.Id}" />
+			                    	<apex:inputField value="{!position.Name}" rendered="{! editPositionId == position.Id}" />
+			                    </td>
+			                    <td>
+				                    <apex:commandButton value="Edit" action="{!editPosition}" rendered="{! levelCategoryId == null && editPositionId == null }" reRender="editBox,positionsBox" status="editsaveStatus" >
+				                        <apex:param name="editPositionId"
+				                        value="{!position.Id}"
+				                        assignTo="{!editPositionId }"/>
+				                        <apex:param name="levelCategoryId"
+				                        value="{!category.Id}"
+				                        assignTo="{!levelCategoryId}"/>
+				                    </apex:commandButton>
+				                    <apex:commandButton value="Delete" action="{!deletePosition}" rendered="{! levelCategoryId == null && editPositionId == null }" reRender="editBox,positionsBox" status="editsaveStatus" >
+				                        <apex:param name="deletePositionId"
+				                        value="{!position.Id}"
+				                        assignTo="{!deletePositionId}"/>
+				                        <apex:param name="levelCategoryId"
+				                        value="{!category.Id}"
+				                        assignTo="{!levelCategoryId}"/>			                        
+				                    </apex:commandButton>
+				                    <apex:commandButton action="{!savePedit}" reRender="positions,editBox,msgs" value="Save" rendered="{! editPositionId == position.Id}" status="editsaveStatus" />
+					                <apex:commandButton action="{!cancelPedit}" reRender="positions,msgs" value="Cancel" rendered="{! editPositionId == position.Id}" status="editsaveStatus" />
+			                    </td>
+				                <td> 
+				                    <apex:outputField value="{!position.Percent_of_Time__c}" rendered="{! editPositionId != position.Id}" />
+				                    <apex:inputField value="{!position.Percent_of_Time__c}" rendered="{! editPositionId == position.Id}" />
+								</td>
+				                <td> 
+				                    <apex:outputField value="{!position.Expected_Visits_per_Year__c}" rendered="{! editPositionId != position.Id}" />
+				                    <apex:inputField value="{!position.Expected_Visits_per_Year__c}" rendered="{! editPositionId == position.Id}" />
+								</td>  
+				                <td> 
+				                    <apex:outputField value="{!position.Number_of_FTE__c}" rendered="{! editPositionId != position.Id}" />
+				                    <apex:inputField value="{!position.Number_of_FTE__c}" rendered="{! editPositionId == position.Id}" />
+								</td>
+				                <td> 
+				                    <apex:outputText value="{!position.Staffing_Category__r.Name}"  />
+				                    <apex:outputPanel rendered="{! editPositionId == position.Id}"  >
+				                    	<a href="javascript:tierHelp()">want to change?</a>
+					                    <script language="JavaScript" type="text/javascript">
+						                    function tierHelp(){
+							                    alert("This can't be changed, please delete the position and recreate it if you need to change it")
+											}
+					                    </script>
+				                    </apex:outputPanel>
+								</td>  			                    
+			                </tr>                          
+		                	</apex:repeat>
+		                	</table>       
+		            	</apex:outputPanel>
+					</apex:column>	                
+	                </apex:pageBlockTable>
+	                </apex:actionRegion>       
+	            	</apex:outputPanel>
+	            	</td>
+	            </tr>
+	            </table>
+   
+            </apex:outputPanel>
+        </apex:pageBlock>                       
+        </apex:outputPanel>
+
+          
+        <apex:outputPanel id="giftlevels">     
+        <apex:pageBlock title="STEP 4: Identify the Gift Levels within each Tier" rendered="{! stepCount == 4}">
+		<script>
+	    	$('#steplist li').removeClass('currentStep');
+	    	$('#steplist li:nth-child(<apex:outputText value="{!stepCount}" />)').addClass('currentStep');
+		</script>
+		editLevelId = {!editLevelId}
+	    <apex:outputPanel id="scenariodata" title="Scenario Data" style="width:100%;" >
+	    Define gift levels within each Tier of the pyramid (these levels help identify the expected # of donors, 
+	    prospects and visits you think will	be needed for soliciting donations within a specific dollar range)
+	    <p>When you are ready, select &nbsp;<apex:commandButton value="Next" action="{!next}" reRender="giftlevels,staffassumptions" status="editsaveStatus" />
+        	 or <apex:commandButton value="Back" action="{!back}" reRender="giftlevels,positions" status="editsaveStatus" /></p>
+                <apex:repeat value="{!categories}" var="cat"> 
+                <apex:outputPanel id="levels" layout="none">
+                <table class="cattable" style="width:100%;">          
+	                <tr style="background-color:{!cat.Color__c} !important;">
+	                	<td colspan="8"><b><apex:outputField value="{!cat.Name}"  /></b> [ Dollar Range: 
+						<b>Min</b> - <apex:outputField value="{!cat.Threshold_Lower__c}" /> 
+						<b>Max</b> - <apex:outputField value="{!cat.Threshold_Upper__c}" rendered="{! cat.Threshold_Upper__c > 0}" />
+						  <apex:outputText rendered="{! !(cat.Threshold_Upper__c > 0)}"> (no limit) </apex:outputText> ] 
+						<apex:commandButton action="{!setNewLevelCatId}" value="Define a New Level in this tier" rerender="giftlevels,addlevelBox,gts" status="editsaveStatus" >
+                    		<apex:param name="categoryid" value="{!cat.Id}" assignTo="{!levelCategoryId}" />
+                    	</apex:commandButton>  
+                    	</td>	
+					</tr>      
+	                <tr style="background-color:{!cat.Color__c} !important;" cellpadding="5px">
+		                <td class="blank">Available Actions <br />
+	                    </td>
+		                <td>Minimum Gift Value</td>
+		                <td>Maximum Gift Value</td>
+		                <td>Total Expected Donations</td>
+		                <td>Number of Prospects Needed</td>
+		                <td>Number of Donors Required</td>               
+		                <td>Expected Number of Visits Per Donor</td>
+		                <td>Total Number of Donor Visits</td>
+	                </tr>
+					<apex:actionRegion >
+			        <apex:outputPanel layout="none" id="addlevelBox" rendered="{!levelCategoryId == cat.Id && editLevelId == null}" >
+			        <tr>		
+			        	<td style="text-align:left;color:blue;"><b>Add a Gift Level</b><br /> 
+			        		<apex:commandButton action="{!saveLedit}" reRender="addlevelBox,scenariodata,msgs,gts" value="Save" status="editsaveStatus" />
+			            	<apex:commandButton action="{!cancelLedit}" reRender="addlevelBox,scenariodata,msgs,gts" value="Cancel" status="editsaveStatus" />
+			            </td>
+			            <td><apex:inputField value="{!addLevel.Minimum_Gift_Value__c}" /></td>
+			            <td><apex:inputField value="{!addLevel.Maximum_Gift_Value__c}" /></td>
+			            <td><apex:inputField id="totalgiftvalue" value="{!addLevel.Total_Gifts_Equalling__c}" /></td>                       
+			            <td><apex:inputField id="numprospects" value="{!addLevel.Number_Of_Prospects__c}" /></td>
+			            <td><apex:inputField value="{!addLevel.Number_Of_Donors__c}"/></td>
+			            <td><apex:inputField id="numvisits" value="{!addLevel.Number_of_Visits_Per_Prospect__c}" /></td>
+					</tr>    
+					</apex:outputPanel>              
+				    </apex:actionRegion>              				                                             
+	                <apex:repeat value="{!cat.staffing_levels__r}" var="level">        
+	                <tr style="background-color:{!cat.Color__c} !important;">
+	                	<td class="blank">
+						<apex:commandButton value="Edit" action="{!editLevel}" rendered="{!editLevelId == null && levelCategoryId == null}" reRender="scenariodata" oncomplete="showMe('levelEditWindow');" status="editsaveStatus" >
+	                        <apex:param name="editLevelId" value="{!level.Id}" assignTo="{!editLevelId}"/>
+	                        <apex:param name="categoryid" value="{!cat.Id}" assignTo="{!levelCategoryId}" />
+	                    </apex:commandButton>
+	                    <apex:commandButton action="{!deleteLevel}" rendered="{!editLevelId == null && levelCategoryId == null}" value="Delete"  style="color:red;" onclick="if (!confirmation('level')) return false;" rerender="scenariodata" status="editsaveStatus" >
+	                    	<apex:param name="levelid" value="{!level.Id}" assignTo="{!deletelevelId}"  />
+	                        <apex:param name="categoryid" value="{!cat.Id}" assignTo="{!levelCategoryId}" />
+	                    </apex:commandButton>
+	                    <apex:commandButton action="{!saveLedit}" rendered="{!level.Id == editLevelId}"  reRender="giftlevels,levels,msgs,gts" value="Save" status="editsaveStatus">
+	                    <apex:param name="editLevelId" value="{!level.Id}" assignTo="{!editLevelId}"/>
+	                    </apex:commandButton>
+			            <apex:commandButton action="{!cancelLedit}" rendered="{!level.Id == editLevelId}" reRender="giftlevels,levels,msgs,gts" value="Cancel" status="editsaveStatus" />
+	                    </td>
+	                    <td>
+	                    	<apex:outputField id="giftvalue" value="{!level.Minimum_Gift_Value__c}" rendered="{! editLevelId != level.Id}" />
+	                    	<apex:inputField value="{!level.Minimum_Gift_Value__c}" rendered="{! editLevelId == level.Id}" />
+	                    </td>
+	                    <td>
+	                    	<apex:outputField id="maxgiftvalue" value="{!level.Maximum_Gift_Value__c}" rendered="{! editLevelId != level.Id}" />
+							<apex:inputField value="{!level.Maximum_Gift_Value__c}" rendered="{! editLevelId == level.Id}" />           	             	
+	                    </td>	                    
+	                    <td>
+	                    	<apex:outputField id="totalgiftvalue" value="{!level.Total_Gifts_Equalling__c}" rendered="{! editLevelId != level.Id}" />
+	                    	<apex:inputField value="{!level.Total_Gifts_Equalling__c}" rendered="{! editLevelId == level.Id}" />
+	                    </td>
+	                    <td>
+	                    	<apex:outputField id="numprospects" value="{!level.Number_Of_Prospects__c}" rendered="{! editLevelId != level.Id}" />
+	                    	<apex:inputField value="{!level.Number_Of_Prospects__c}" rendered="{! editLevelId == level.Id}" />
+	                    </td>
+	                    <td>
+	                    	<apex:outputField value="{!level.Number_Of_Donors__c}" rendered="{! editLevelId != level.Id}" />
+	                    	<apex:inputField value="{!level.Number_Of_Donors__c}" rendered="{! editLevelId == level.Id}" />
+	                    </td>                                     
+	                    <td>
+	                    	<apex:outputField id="numvisits" value="{!level.Number_of_Visits_Per_Prospect__c}" rendered="{! editLevelId != level.Id}" />
+	                    	<apex:inputField value="{!level.Number_of_Visits_Per_Prospect__c}" rendered="{! editLevelId == level.Id}" />
+	                    </td>
+	                    <td>
+	                    	<apex:outputField value="{!level.Total_Number_of_Visits_Needed__c}" />
+	                    </td>      
+	                </tr> 
+	                </apex:repeat>
+	                <apex:outputPanel layout="none" rendered="{! cat.staffing_levels__r.size > 0}">
+	                <tr><td style="background-color:black !important;" colspan="8"></td></tr>
+	                <tr style="background-color:{!cat.Color__c} !important;">
+	                    <td > </td>
+	                    <td> </td>
+	                    <td>TOTAL FOR {!cat.Name}</td>
+	                    <td><apex:outputField value="{!cat.Total_Gifts_Equaling__c}" /></td>
+	                    <td><apex:outputField value="{!cat.Total_Prospects_Required__c}" /></td>
+	                    <td><apex:outputField value="{!cat.Total_Donors_Required__c}" /></td>                    
+	                    <td > </td>           
+	                    <td><apex:outputField value="{!cat.Total_Number_of_Visits_Needed__c}" /></td> 
+	                </tr>
+	                </apex:outputPanel>               
+                </table>
+                <br /><br />
+                </apex:outputPanel>
+                </apex:repeat>
+
+                <apex:outputPanel id="gts" layout="none" rendered="{!minimumLevelsMet == true}">
+	                <table>
+	                <tr style="background-color: #C5D9F1 !important;" cellpadding="5px">
+		                <td>GRAND TOTAL for</td>
+		                <td>Total Donations Required</td>
+		                <td>Number of Prospects Needed</td>
+		                <td>Number of Donors Required</td>               
+		                <td>Total Number of Donor Visits</td>
+	                </tr>
+	                <tr style="background-color:#FAC090;">
+	                    <td>{!theScenario.Campaign_Name__c}</td>
+						<td>
+	                    	<apex:outputField value="{!theScenario.Total_Gifts_Equaling__c}" />
+	                    </td>
+	                    <td>
+	                    	<apex:outputField value="{!theScenario.Total_Prospects_Required__c}" />
+	                    </td>
+	                    <td>
+	                    	<apex:outputField value="{!theScenario.Total_Donors_Required__c}" />
+	                    </td>                                    
+	                    <td>
+	                    	<apex:outputField value="{!theScenario.Total_Number_of_Visits_Needed__c	}" />
+	                    </td>          
+	                </tr>
+	                </table>
+                </apex:outputPanel>
+
+             </apex:outputPanel>     
+    </apex:pageBlock>
+    </apex:outputPanel>
+        
+       
+    <apex:outputPanel id="staffassumptions">
+    <apex:pageBlock title="Staff Assumptions" rendered="{! stepCount == 5}">
+		<script>
+	    	$('#steplist li').removeClass('currentStep');
+	    	$('#steplist li:nth-child(<apex:outputText value="{!stepCount}" />)').addClass('currentStep');
+		</script>
+	    <p>Specify the expected and actual number of visits each staffing group expects to make. You may also make adjustments here to 
+	    the total FTE count you have in each role, as well as the  amount of time they are expected to spend on fund raising visits</p>
+    	<p>When you are ready, select &nbsp;<apex:commandButton value="Next" action="{!next}" reRender="staffassumptions,campaignmodel" status="editsaveStatus" />
+       	 or <apex:commandButton value="Back" action="{!back}" reRender="staffassumptions,giftlevels" status="editsaveStatus" /></p>
+
+
+            <apex:outputPanel id="SAcategories">
+            <table>
+                <tr>
+                <apex:repeat value="{!categories}" var="category">
+                <td style="vertical-align:top;">
+                <table class="cattable">
+                	<tr style="background-color:{!category.Color__c} !important;">
+                		<td>Gift Tier: {!category.Name}</td>
+                		<td>(Total FTE) {!category.Number_of_FTE__c}</td>
+               		</tr>
+                    <apex:repeat value="{!category.Staffing_Positions__r}" var="position">
+                    <tr style="background-color:{!category.Color__c} !important;">
+                        <td width="75%;" >Position: {!position.Name} </td> 
+                        <td width="25%;"> (Number of FTE)
+                            <apex:inputField id="fteinput" value="{!position.Number_of_FTE__c}" styleClass="myInput">
+                                <apex:actionSupport event="onchange" focus="projpercent" action="{!saveposedit}" rerender="SAcategories" status="cateditsaveStatus" >
+                                <apex:param name="categoryid" value="{!category.Id}" /> 
+                                <apex:param name="positionid" value="{!position.Id}" />
+                                </apex:actionSupport>
+                            </apex:inputField>
+                        </td>
+                    </tr> 
+                    <tr>
+                        <td>Projected % of FTEs Time Dedicated to Campaign</td> 
+                        <td>
+                            <apex:inputField id="projpercent" value="{!position.Percent_of_Time__c}" styleClass="myInput" >
+                                <apex:actionSupport event="onchange" focus="expectedvisits" action="{!saveposedit}" rerender="SAcategories" status="cateditsaveStatus">
+                                <apex:param name="categoryid" value="{!category.Id}" /> 
+                                <apex:param name="positionid" value="{!position.Id}" />
+                                </apex:actionSupport>
+                            </apex:inputField>
+                        </td>
+                    </tr> 
+                    <tr>
+                        <td>Total Expected Visits per year for Campaign</td> 
+                        <td>
+                            <apex:inputField id="expectedvisits" value="{!position.Expected_Visits_per_Year__c}" styleClass="myInput">
+                                <apex:actionSupport event="onchange" focus="actualvisits" action="{!saveposedit}" rerender="SAcategories" status="cateditsaveStatus">
+                                <apex:param name="categoryid" value="{!category.Id}" /> 
+                                <apex:param name="positionid" value="{!position.Id}" />
+                                </apex:actionSupport>
+                            </apex:inputField>
+                        </td>
+                    </tr> 
+                    <tr>
+                        <td>Actual Avg. Visits per FTE</td> 
+                        <td>
+                            <apex:inputField id="actualvisits" value="{!position.Actual_Visits_per_Year__c}" styleClass="myInput">
+                                <apex:actionSupport event="onchange" focus="" action="{!saveposedit}" rerender="SAcategories" status="cateditsaveStatus">
+                                <apex:param name="categoryid" value="{!category.Id}" /> 
+                                <apex:param name="positionid" value="{!position.Id}" />
+                                </apex:actionSupport>
+                            </apex:inputField>
+                        </td>
+                    </tr>
+					</apex:repeat>                    
+                    <tr style="background-color:{!category.Color__c} !important;"><td colspan="2">Totals for {!category.Name}</td></tr>
+                    <tr>
+                        <td> Visits per Donor Assumption </td>
+                        <td><apex:outputField value="{!category.Visits_per_Donor__c}" /></td>
+                    </tr>                     
+                    <tr>
+                        <td> # Target Prospects (<apex:outputField value="{!category.Lower_Gift_Limit__c}" /> +)</td> 
+                        <td><apex:outputField value="{!category.Total_Prospects_Required__c}" /></td>
+                    </tr>    
+                    <tr>
+                        <td># Donors Required (<apex:outputField value="{!category.Lower_Gift_Limit__c}" /> +)</td> 
+                        <td><apex:outputField value="{!category.Total_Donors_Required__c}" /></td>
+                    </tr>                      
+                    <tr>
+                        <td>Total Expected of Visits per Year for {!category.Name}</td> <td><apex:outputField value="{!category.Total_Expected_Visits_per_Year__c}" /></td>
+                    </tr>
+                    <tr>
+                        <td>Total Actual Visits per Year for {!category.Name}</td> <td><apex:outputField value="{!category.Total_Actual_Visits_per_Year__c}" /></td>
+                    </tr>
+                    <tr>
+                        <td>Total Number of Visits for Campaign</td> <td><apex:outputField value="{!category.Total_Number_of_Visits_Needed__c}" /></td>
+                    </tr>
+                </table>
+                </td>    
+                </apex:repeat>
+                </tr>
+            </table>
+            </apex:outputPanel>
+    </apex:pageBlock>
+    </apex:outputPanel> 
+    
+    <apex:outputPanel id="campaignmodel">
+    <apex:pageBlock title="Campaign Model"  rendered="{! stepCount == 6}">
+	<script>
+    	$('#steplist li').removeClass('currentStep');
+    	$('#steplist li:nth-child(<apex:outputText value="{!stepCount}" />)').addClass('currentStep');
+	</script>
+    <p>Final data is here, or you can use the navigation at the top to go <apex:commandButton value="Back" action="{!back}" reRender="staffassumptions,campaignmodel" /></p>
+    <table>
+        <tr>
+            <td style="vertical-align:top;">
+                <table class="cattable">
+                    <tr>
+                        <th class="bigHeader"><apex:outputField value="{!theScenario.Campaign_Name__c}" /> &nbsp;</th> 
+                        <th class="colHeader"> </th>
+                    </tr>
+                    <tr>
+                        <td> Campaign Length (Years): </td> 
+                        <td> 
+                            <apex:inputField value="{!theScenario.Campaign_Length__c}" styleClass="myInput">
+                                <apex:actionSupport event="onchange" focus="fteinput" action="{!saveedit}" rerender="campaignmodel" status="cateditsaveStatus" />
+                            </apex:inputField>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td> Number of Prospects Required (<apex:outputField value="{!theScenario.Lower_Gift_Limit__c}" /> +)</td>
+                        <td><apex:outputField value="{!theScenario.Total_Prospects_Required__c}" /></td>
+                    </tr>                
+                    <tr>
+                        <td> Number of Donors Required (<apex:outputField value="{!theScenario.Lower_Gift_Limit__c}" /> +)</td>
+                        <td><apex:outputField value="{!theScenario.Total_Donors_Required__c}" /></td>
+                    </tr> 
+                    <tr>
+                        <td> Ratio of Prospects to Donors</td>
+                        <td><apex:outputField value="{!theScenario.Prospect_To_Donor_Ratio__c}" /></td>
+                    </tr> 
+                </table>
+            </td>
+            <apex:repeat value="{!categories}" var="category">
+            <td style="vertical-align:top;">
+                <table class="cattable">
+                    <tr style="background-color:{!category.Color__c} !important;">
+                        <th style="width: 75%;font-weight:bold;">Forecasted Outcomes - {!category.Name}</th> 
+                        <th style="width: 25%;text-align:right;font-weight:bold;">Baseline </th>
+                    </tr>         
+                    <tr>
+                        <td>Total Qualification Visits</td> 
+                        <td>
+                            <apex:outputField value="{!category.Total_Prospects_Required__c}" />
+                        </td> 
+                    </tr>
+                    <tr>
+                        <td>Total Cultivation / Solicitation Visits</td> 
+                        <td>
+                            <apex:outputField value="{!category.Total_Number_of_Visits_Needed__c}" />
+                        </td> 
+                    </tr>
+                    <tr>
+                        <td>Sum: Total Visits for Campaign</td> 
+                        <td>
+                            <apex:outputField value="{!category.Total_Visits_per_Campaign__c}" />
+                        </td> 
+                    </tr>
+                    <tr>
+                        <td>Number of Visits Projected per year</td> 
+                        <td>
+                            <apex:outputField value="{!category.Projected_Visits_per_Year__c}" />
+                        </td> 
+                    </tr>
+                </table>
+                <br />
+                <table class="cattable">
+                    <tr style="background-color:{!category.Color__c} !important;">
+                        <th style="width: 75%;font-weight:bold;">{!category.Name}</th> 
+                        <th style="width: 25%;text-align:right;font-weight:bold;">Visits</th>
+                    </tr>                       
+                    <tr>
+                        <td>Visit Potential with Current Staff &amp; Goals (Total)</td> 
+                        <td>
+                            <apex:outputField value="{!category.Visit_Potential__c}" />
+                        </td> 
+                    </tr>
+                    <tr>
+                        <td>Visit Potential with Current Staff &amp; Goals (per Year)</td> 
+                        <td>
+                            <apex:outputField value="{!category.Visit_Potential_per_Year__c}" />
+                        </td> 
+                    </tr>
+                    <tr>
+                        <td>Visit Potential Gap</td> 
+                        <td>
+                            <apex:outputField value="{!category.Visit_Gap__c}" />
+                        </td> 
+                    </tr>
+                    <tr>
+                        <td>Visit Potential Gap per Year</td> 
+                        <td>
+                            <apex:outputField value="{!category.Visit_Gap_per_Year__c}" />
+                        </td> 
+                    </tr>                    
+                    <apex:repeat value="{!category.Staffing_Positions__r}" var="position">
+                    <tr>
+                        <td>Additional Fundraisers Needed ({!position.Name})</td> 
+                        <td>
+                            <apex:outputField value="{!position.Additional_FTE_Needed__c}" />
+                        </td> 
+                    </tr>
+                    <tr><td colspan="2"></td></tr>
+                    </apex:repeat>
+                </table>
+            </td>
+            </apex:repeat>
+        </tr>
+    </table>
+    <apex:pageBlockSection title="Updated Outcomes" >
+    <apex:outputPanel >
+    <table>
+    <tr>
+		<apex:repeat value="{!categories}" var="category">
+	    <td>
+	        <table class="cattable">
+	            <tr style="background-color:{!category.Color__c} !important;">
+	                <td colspan="2" style="font-weight:bold;">Updated Outcomes - {!category.Name}</td> 
+	            </tr>                               
+	            <tr>
+	                <td>Visit Actual with Current Staff &amp; Goals (Total)</td> 
+	                <td>
+	                    <apex:outputField value="{!category.Visit_Actual__c}" />
+	                </td> 
+	            </tr>
+	            <tr>
+	                <td>Visit Actual with Current Staff &amp; Goals (per Year)</td> 
+	                <td>
+	                    <apex:outputField value="{!category.Visit_Actual_per_Year__c}" />
+	                </td> 
+	            </tr>
+	            <tr>
+	                <td>Visit Actual Gap</td> 
+	                <td>
+	                    <apex:outputField value="{!category.Visit_Gap_Actual__c}" />
+	                </td> 
+	            </tr>
+	            <tr>
+	                <td>Visit Potential Gap per Year</td> 
+	                <td>
+	                    <apex:outputField value="{!category.Visit_Gap_Actual_per_Year__c}" />
+	                </td> 
+	            </tr>                    
+	            <apex:repeat value="{!category.Staffing_Positions__r}" var="position">
+	            <tr>
+	                <td>Additional Fundraisers Needed ({!position.Name})</td> 
+	                <td>
+	                    <apex:outputField value="{!position.Additional_FTE_Needed_Actual__c}" />
+	                </td> 
+	            </tr>
+	            <tr><td colspan="2"></td></tr>
+	            </apex:repeat>
+	        </table>
+	    </td>
+	    </apex:repeat>
+    </tr>
+    </table>
+    </apex:outputPanel>
+    </apex:pageBlockSection>    
+	</apex:pageBlock>
+    </apex:outputPanel>                    
+   
+          
+</apex:form>
+</apex:define>
+</apex:composition>
+</apex:page>
